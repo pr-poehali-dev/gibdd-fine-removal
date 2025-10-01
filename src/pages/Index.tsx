@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -334,6 +334,56 @@ const AdminPanel = ({ onBack }: { onBack: () => void }) => {
     { id: '002', client: 'Мария К.', phone: '+7 888 234 56 78', status: 'Выполнен', amount: '15000', date: '2024-01-14' },
     { id: '003', client: 'Дмитрий С.', phone: '+7 777 345 67 89', status: 'Новый', amount: '45000', date: '2024-01-16' }
   ]);
+  
+  const [fines, setFines] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'active' | 'removed'>('active');
+  const [removingFineId, setRemovingFineId] = useState<number | null>(null);
+  
+  const BACKEND_URL = 'https://functions.poehali.dev/6b4ad600-7fa0-4100-80f7-4cf11aec76a5';
+  
+  const loadFines = async (status: 'active' | 'removed') => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}?status=${status}`);
+      const data = await response.json();
+      setFines(data.fines || []);
+    } catch (error) {
+      console.error('Ошибка загрузки штрафов:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const removeFine = async (fineId: number) => {
+    if (!confirm('Вы уверены, что хотите удалить этот штраф из базы?')) return;
+    
+    setRemovingFineId(fineId);
+    try {
+      const response = await fetch(BACKEND_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fine_id: fineId,
+          admin_id: 'admin',
+          reason: 'Удалено через админ-панель'
+        })
+      });
+      
+      if (response.ok) {
+        await loadFines(activeTab);
+      }
+    } catch (error) {
+      console.error('Ошибка удаления штрафа:', error);
+      alert('Произошла ошибка при удалении штрафа');
+    } finally {
+      setRemovingFineId(null);
+    }
+  };
+  
+  useEffect(() => {
+    loadFines(activeTab);
+  }, [activeTab]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -405,8 +455,9 @@ const AdminPanel = ({ onBack }: { onBack: () => void }) => {
         </div>
 
         <Tabs defaultValue="orders" className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsList className="grid w-full max-w-md grid-cols-3">
             <TabsTrigger value="orders">Заказы</TabsTrigger>
+            <TabsTrigger value="fines">База штрафов</TabsTrigger>
             <TabsTrigger value="clients">Клиенты</TabsTrigger>
           </TabsList>
           
@@ -458,6 +509,125 @@ const AdminPanel = ({ onBack }: { onBack: () => void }) => {
                     </Card>
                   ))}
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          
+          <TabsContent value="fines">
+            <Card>
+              <CardHeader>
+                <CardTitle>База штрафов ГИБДД</CardTitle>
+                <CardDescription>Управление записями о штрафах в базе данных</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2 mb-6">
+                  <Button 
+                    variant={activeTab === 'active' ? 'default' : 'outline'}
+                    onClick={() => setActiveTab('active')}
+                    className="flex-1"
+                  >
+                    <Icon name="AlertCircle" size={16} className="mr-2" />
+                    Активные штрафы
+                  </Button>
+                  <Button 
+                    variant={activeTab === 'removed' ? 'default' : 'outline'}
+                    onClick={() => setActiveTab('removed')}
+                    className="flex-1"
+                  >
+                    <Icon name="Trash2" size={16} className="mr-2" />
+                    Удалённые
+                  </Button>
+                </div>
+                
+                {loading ? (
+                  <div className="text-center py-12">
+                    <Icon name="Loader2" size={48} className="text-primary mx-auto animate-spin mb-4" />
+                    <p className="text-muted-foreground">Загрузка данных...</p>
+                  </div>
+                ) : fines.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Icon name="FileX" size={48} className="text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">Штрафов не найдено</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {fines.map((fine) => (
+                      <Card key={fine.id} className="border-2 hover:shadow-lg transition-shadow">
+                        <CardContent className="pt-6">
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <div className="font-bold text-lg text-primary">УИН: {fine.fine_number}</div>
+                                <Badge className={fine.status === 'active' ? 'bg-red-500' : 'bg-gray-500'}>
+                                  {fine.status === 'active' ? 'В базе' : 'Удалён'}
+                                </Badge>
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                Добавлено: {new Date(fine.created_at).toLocaleDateString('ru-RU')}
+                              </div>
+                            </div>
+                            {activeTab === 'active' && (
+                              <Button 
+                                size="sm" 
+                                variant="destructive"
+                                onClick={() => removeFine(fine.id)}
+                                disabled={removingFineId === fine.id}
+                              >
+                                {removingFineId === fine.id ? (
+                                  <Icon name="Loader2" size={16} className="mr-1 animate-spin" />
+                                ) : (
+                                  <Icon name="Trash2" size={16} className="mr-1" />
+                                )}
+                                Удалить
+                              </Button>
+                            )}
+                          </div>
+                          
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                              <div className="text-muted-foreground mb-1">Водитель</div>
+                              <div className="font-medium">{fine.driver_name}</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground mb-1">Телефон</div>
+                              <div className="font-medium">{fine.driver_phone || '—'}</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground mb-1">Гос. номер</div>
+                              <div className="font-medium font-mono">{fine.license_plate}</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground mb-1">Дата нарушения</div>
+                              <div className="font-medium">{new Date(fine.violation_date).toLocaleDateString('ru-RU')}</div>
+                            </div>
+                          </div>
+                          
+                          <div className="mt-4 pt-4 border-t grid grid-cols-2 gap-4">
+                            <div>
+                              <div className="text-muted-foreground text-sm mb-1">Тип нарушения</div>
+                              <div className="font-medium">{fine.violation_type}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-muted-foreground text-sm mb-1">Сумма штрафа</div>
+                              <div className="text-2xl font-bold text-primary">{fine.fine_amount.toLocaleString('ru-RU')} ₽</div>
+                            </div>
+                          </div>
+                          
+                          {fine.removed_at && (
+                            <div className="mt-4 pt-4 border-t bg-muted/50 -mx-6 -mb-6 px-6 py-3 rounded-b-lg">
+                              <div className="flex items-center gap-2 text-sm">
+                                <Icon name="CheckCircle" size={16} className="text-green-600" />
+                                <span className="text-muted-foreground">
+                                  Удалено {new Date(fine.removed_at).toLocaleDateString('ru-RU')} пользователем {fine.removed_by}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

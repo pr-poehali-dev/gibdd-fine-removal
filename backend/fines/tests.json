@@ -1,0 +1,26 @@
+{
+  "tests": [
+    {
+      "name": "Get active fines list",
+      "method": "GET",
+      "path": "/?status=active",
+      "expectedStatus": 200,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Remove fine from database",
+      "method": "PUT",
+      "path": "/",
+      "body": {
+        "fine_id": 1,
+        "admin_id": "test_admin",
+        "reason": "Test removal"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
