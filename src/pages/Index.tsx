@@ -345,8 +345,12 @@ const AdminPanel = ({ onBack }: { onBack: () => void }) => {
   const [searchResults, setSearchResults] = useState<any>(null);
   const [searching, setSearching] = useState(false);
   
+  const [searchHistory, setSearchHistory] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  
   const BACKEND_URL = 'https://functions.poehali.dev/6b4ad600-7fa0-4100-80f7-4cf11aec76a5';
   const SEARCH_URL = 'https://functions.poehali.dev/c27fa26d-7fb4-401f-b2f4-826e655715f1';
+  const HISTORY_URL = 'https://functions.poehali.dev/97d56095-0136-4ebf-9bb9-8b7250d8ae2c';
   
   const loadFines = async (status: 'active' | 'removed') => {
     setLoading(true);
@@ -408,9 +412,60 @@ const AdminPanel = ({ onBack }: { onBack: () => void }) => {
     setSearchResults(null);
   };
   
+  const loadSearchHistory = async () => {
+    try {
+      const response = await fetch(`${HISTORY_URL}?limit=50`);
+      const data = await response.json();
+      setSearchHistory(data.logs || []);
+    } catch (error) {
+      console.error('Ошибка загрузки истории:', error);
+    }
+  };
+  
+  const exportToExcel = () => {
+    if (!searchResults || !searchResults.fines || searchResults.fines.length === 0) {
+      alert('Нет данных для экспорта');
+      return;
+    }
+    
+    const headers = ['УИН', 'Водитель', 'Телефон', 'Госномер', 'Дата нарушения', 'Тип нарушения', 'Сумма', 'Статус'];
+    const rows = searchResults.fines.map((fine: any) => [
+      fine.fine_number,
+      fine.driver_name,
+      fine.driver_phone || '',
+      fine.license_plate,
+      new Date(fine.violation_date).toLocaleDateString('ru-RU'),
+      fine.violation_type,
+      fine.fine_amount,
+      fine.status === 'active' ? 'В базе' : 'Удалён'
+    ]);
+    
+    let csvContent = '\uFEFF';
+    csvContent += headers.join(';') + '\n';
+    rows.forEach((row: any[]) => {
+      csvContent += row.join(';') + '\n';
+    });
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `штрафы_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+  
   useEffect(() => {
     loadFines(activeTab);
   }, [activeTab]);
+  
+  useEffect(() => {
+    if (showHistory) {
+      loadSearchHistory();
+    }
+  }, [showHistory]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -544,12 +599,80 @@ const AdminPanel = ({ onBack }: { onBack: () => void }) => {
           <TabsContent value="search">
             <Card>
               <CardHeader>
-                <CardTitle>Пробив данных по штрафам</CardTitle>
-                <CardDescription>Поиск штрафов по УИН, госномеру, телефону или ФИО водителя</CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Пробив данных по штрафам</CardTitle>
+                    <CardDescription>Поиск штрафов по УИН, госномеру, телефону или ФИО водителя</CardDescription>
+                  </div>
+                  <div className="flex gap-2">
+                    {searchResults && (
+                      <Button onClick={exportToExcel} variant="outline">
+                        <Icon name="Download" size={20} className="mr-2" />
+                        Экспорт в Excel
+                      </Button>
+                    )}
+                    <Button onClick={() => setShowHistory(!showHistory)} variant="outline">
+                      <Icon name="History" size={20} className="mr-2" />
+                      История
+                    </Button>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {showHistory ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-bold text-lg">История пробивов</h3>
+                      <Button onClick={() => setShowHistory(false)} variant="outline" size="sm">
+                        <Icon name="X" size={16} className="mr-1" />
+                        Закрыть
+                      </Button>
+                    </div>
+                    {searchHistory.length === 0 ? (
+                      <div className="text-center py-12">
+                        <Icon name="FileText" size={48} className="text-muted-foreground mx-auto mb-4" />
+                        <p className="text-muted-foreground">История пуста</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {searchHistory.map((log) => (
+                          <Card key={log.id} className="border hover:shadow-md transition-shadow">
+                            <CardContent className="pt-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <Badge variant="outline">
+                                      {log.search_type === 'uin' ? 'УИН' :
+                                       log.search_type === 'license_plate' ? 'Госномер' :
+                                       log.search_type === 'phone' ? 'Телефон' : 'ФИО'}
+                                    </Badge>
+                                    <span className="font-medium">{log.search_value}</span>
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">
+                                    {new Date(log.searched_at).toLocaleString('ru-RU')} • Найдено: {log.results_count} • Админ: {log.admin_id}
+                                  </div>
+                                </div>
+                                <Button 
+                                  size="sm" 
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setSearchType(log.search_type);
+                                    setSearchValue(log.search_value);
+                                    setShowHistory(false);
+                                  }}
+                                >
+                                  <Icon name="RotateCcw" size={16} />
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="md:col-span-1">
                       <label className="text-sm font-medium mb-2 block">Тип поиска</label>
                       <select 
@@ -717,7 +840,8 @@ const AdminPanel = ({ onBack }: { onBack: () => void }) => {
                       <p className="text-muted-foreground">Введите данные для поиска штрафов</p>
                     </div>
                   )}
-                </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

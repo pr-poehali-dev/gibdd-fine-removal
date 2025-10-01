@@ -59,6 +59,12 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
     try:
+        cursor.execute(
+            "INSERT INTO search_logs (search_type, search_value, admin_id) VALUES (%s, %s, %s)",
+            (search_type, search_value, 'admin')
+        )
+        conn.commit()
+        
         fines: List[Dict] = []
         
         if search_type == 'uin':
@@ -129,6 +135,12 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 removed_count += 1
             
             result.append(fine_dict)
+        
+        cursor.execute(
+            "UPDATE search_logs SET results_count = %s WHERE id = (SELECT MAX(id) FROM search_logs)",
+            (len(result),)
+        )
+        conn.commit()
         
         return {
             'statusCode': 200,
