@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "Search fines by license plate",
+      "method": "GET",
+      "path": "/?search_type=license_plate&search_value=А123БВ177",
+      "expectedStatus": 200,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Search fines by UIN",
+      "method": "GET",
+      "path": "/?search_type=uin&search_value=18810177220415789012",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "total_fines": 1
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

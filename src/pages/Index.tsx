@@ -340,7 +340,13 @@ const AdminPanel = ({ onBack }: { onBack: () => void }) => {
   const [activeTab, setActiveTab] = useState<'active' | 'removed'>('active');
   const [removingFineId, setRemovingFineId] = useState<number | null>(null);
   
+  const [searchType, setSearchType] = useState('uin');
+  const [searchValue, setSearchValue] = useState('');
+  const [searchResults, setSearchResults] = useState<any>(null);
+  const [searching, setSearching] = useState(false);
+  
   const BACKEND_URL = 'https://functions.poehali.dev/6b4ad600-7fa0-4100-80f7-4cf11aec76a5';
+  const SEARCH_URL = 'https://functions.poehali.dev/c27fa26d-7fb4-401f-b2f4-826e655715f1';
   
   const loadFines = async (status: 'active' | 'removed') => {
     setLoading(true);
@@ -379,6 +385,27 @@ const AdminPanel = ({ onBack }: { onBack: () => void }) => {
     } finally {
       setRemovingFineId(null);
     }
+  };
+  
+  const searchFines = async () => {
+    if (!searchValue.trim()) return;
+    
+    setSearching(true);
+    try {
+      const response = await fetch(`${SEARCH_URL}?search_type=${searchType}&search_value=${encodeURIComponent(searchValue)}`);
+      const data = await response.json();
+      setSearchResults(data);
+    } catch (error) {
+      console.error('Ошибка поиска:', error);
+      alert('Произошла ошибка при поиске');
+    } finally {
+      setSearching(false);
+    }
+  };
+  
+  const clearSearch = () => {
+    setSearchValue('');
+    setSearchResults(null);
   };
   
   useEffect(() => {
@@ -455,8 +482,9 @@ const AdminPanel = ({ onBack }: { onBack: () => void }) => {
         </div>
 
         <Tabs defaultValue="orders" className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-3">
+          <TabsList className="grid w-full max-w-2xl grid-cols-4">
             <TabsTrigger value="orders">Заказы</TabsTrigger>
+            <TabsTrigger value="search">Пробив данных</TabsTrigger>
             <TabsTrigger value="fines">База штрафов</TabsTrigger>
             <TabsTrigger value="clients">Клиенты</TabsTrigger>
           </TabsList>
@@ -508,6 +536,187 @@ const AdminPanel = ({ onBack }: { onBack: () => void }) => {
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          
+          <TabsContent value="search">
+            <Card>
+              <CardHeader>
+                <CardTitle>Пробив данных по штрафам</CardTitle>
+                <CardDescription>Поиск штрафов по УИН, госномеру, телефону или ФИО водителя</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="md:col-span-1">
+                      <label className="text-sm font-medium mb-2 block">Тип поиска</label>
+                      <select 
+                        value={searchType} 
+                        onChange={(e) => setSearchType(e.target.value)}
+                        className="w-full h-10 px-3 border rounded-md bg-white"
+                      >
+                        <option value="uin">По УИН (номер постановления)</option>
+                        <option value="license_plate">По госномеру</option>
+                        <option value="phone">По телефону</option>
+                        <option value="driver_name">По ФИО водителя</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-sm font-medium mb-2 block">Значение для поиска</label>
+                      <div className="flex gap-2">
+                        <Input 
+                          placeholder={
+                            searchType === 'uin' ? 'Например: 18810177220415789012' :
+                            searchType === 'license_plate' ? 'Например: А1234ВР177' :
+                            searchType === 'phone' ? 'Например: +79991234567' :
+                            'Например: Иванов'
+                          }
+                          value={searchValue}
+                          onChange={(e) => setSearchValue(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && searchFines()}
+                          className="flex-1"
+                        />
+                        <Button onClick={searchFines} disabled={searching || !searchValue.trim()}>
+                          {searching ? (
+                            <Icon name="Loader2" size={20} className="animate-spin" />
+                          ) : (
+                            <Icon name="Search" size={20} />
+                          )}
+                        </Button>
+                        {searchResults && (
+                          <Button onClick={clearSearch} variant="outline">
+                            <Icon name="X" size={20} />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {searchResults && (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <Card className="border-l-4 border-l-blue-500">
+                          <CardHeader className="pb-2">
+                            <CardDescription>Найдено штрафов</CardDescription>
+                            <CardTitle className="text-2xl">{searchResults.total_fines}</CardTitle>
+                          </CardHeader>
+                        </Card>
+                        <Card className="border-l-4 border-l-red-500">
+                          <CardHeader className="pb-2">
+                            <CardDescription>Активных</CardDescription>
+                            <CardTitle className="text-2xl">{searchResults.active_fines}</CardTitle>
+                          </CardHeader>
+                        </Card>
+                        <Card className="border-l-4 border-l-gray-500">
+                          <CardHeader className="pb-2">
+                            <CardDescription>Удалённых</CardDescription>
+                            <CardTitle className="text-2xl">{searchResults.removed_fines}</CardTitle>
+                          </CardHeader>
+                        </Card>
+                        <Card className="border-l-4 border-l-primary">
+                          <CardHeader className="pb-2">
+                            <CardDescription>Сумма активных</CardDescription>
+                            <CardTitle className="text-2xl">{searchResults.total_amount.toLocaleString('ru-RU')} ₽</CardTitle>
+                          </CardHeader>
+                        </Card>
+                      </div>
+                      
+                      {searchResults.fines.length === 0 ? (
+                        <div className="text-center py-12">
+                          <Icon name="SearchX" size={48} className="text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground">Штрафов не найдено</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <h3 className="font-bold text-lg">Результаты поиска:</h3>
+                          {searchResults.fines.map((fine: any) => (
+                            <Card key={fine.id} className="border-2 hover:shadow-lg transition-shadow">
+                              <CardContent className="pt-6">
+                                <div className="flex items-start justify-between mb-4">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-2">
+                                      <div className="font-bold text-lg text-primary">УИН: {fine.fine_number}</div>
+                                      <Badge className={fine.status === 'active' ? 'bg-red-500' : 'bg-gray-500'}>
+                                        {fine.status === 'active' ? 'В базе' : 'Удалён'}
+                                      </Badge>
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      Добавлено: {new Date(fine.created_at).toLocaleDateString('ru-RU')}
+                                    </div>
+                                  </div>
+                                  {fine.status === 'active' && (
+                                    <Button 
+                                      size="sm" 
+                                      variant="destructive"
+                                      onClick={() => removeFine(fine.id)}
+                                      disabled={removingFineId === fine.id}
+                                    >
+                                      {removingFineId === fine.id ? (
+                                        <Icon name="Loader2" size={16} className="mr-1 animate-spin" />
+                                      ) : (
+                                        <Icon name="Trash2" size={16} className="mr-1" />
+                                      )}
+                                      Удалить
+                                    </Button>
+                                  )}
+                                </div>
+                                
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                  <div>
+                                    <div className="text-muted-foreground mb-1">Водитель</div>
+                                    <div className="font-medium">{fine.driver_name}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground mb-1">Телефон</div>
+                                    <div className="font-medium">{fine.driver_phone || '—'}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground mb-1">Гос. номер</div>
+                                    <div className="font-medium font-mono">{fine.license_plate}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground mb-1">Дата нарушения</div>
+                                    <div className="font-medium">{new Date(fine.violation_date).toLocaleDateString('ru-RU')}</div>
+                                  </div>
+                                </div>
+                                
+                                <div className="mt-4 pt-4 border-t grid grid-cols-2 gap-4">
+                                  <div>
+                                    <div className="text-muted-foreground text-sm mb-1">Тип нарушения</div>
+                                    <div className="font-medium">{fine.violation_type}</div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="text-muted-foreground text-sm mb-1">Сумма штрафа</div>
+                                    <div className="text-2xl font-bold text-primary">{fine.fine_amount.toLocaleString('ru-RU')} ₽</div>
+                                  </div>
+                                </div>
+                                
+                                {fine.removed_at && (
+                                  <div className="mt-4 pt-4 border-t bg-muted/50 -mx-6 -mb-6 px-6 py-3 rounded-b-lg">
+                                    <div className="flex items-center gap-2 text-sm">
+                                      <Icon name="CheckCircle" size={16} className="text-green-600" />
+                                      <span className="text-muted-foreground">
+                                        Удалено {new Date(fine.removed_at).toLocaleDateString('ru-RU')} пользователем {fine.removed_by}
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {!searchResults && (
+                    <div className="text-center py-12">
+                      <Icon name="Search" size={48} className="text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">Введите данные для поиска штрафов</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
